@@ -1,1 +1,6 @@
 streamlit
+numpy
+pandas
+plotly.express
+scipy.stats
+empyrical
