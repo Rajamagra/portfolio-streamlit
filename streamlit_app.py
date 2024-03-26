@@ -273,12 +273,14 @@ def main():
         st.write(f"{portfolio_name:} :arrow_right: Horizon {min(df_portfolio.index):%Y-%m-%d} to {max(df_portfolio.index):%Y-%m-%d}")
         st.dataframe(df_portfolio)
 
+        # Risk metrics
+        df_risk = calculate_risk_metrics(df_portfolio, df_returns, start_date, window=90)
+        # Creating plots
+        create_plots(df_returns, df_portfolio, df_risk, start_date)
+
     else:
         st.write("Please upload an Excel file to get started.")
-    # Risk metrics
-    df_risk = calculate_risk_metrics(df_portfolio, df_returns, start_date, window=90)
-    # Creating plots
-    create_plots(df_returns, df_portfolio, df_risk, start_date)
+
 
 def create_plots(df_returns, df_portfolio, df_risk, start_date):
     # Plot 1: Cumulative Returns of Assets
