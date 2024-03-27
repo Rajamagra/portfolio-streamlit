@@ -213,76 +213,95 @@ def calculate_risk_metrics(df_portfolio, df_returns, start_date, window=30):
     return df_risk
 
 
-
-
 def main():
+    # 1. Initialize session state
+    if 'returns' not in st.session_state:
+        st.session_state.returns = {}
+    if 'portfolios' not in st.session_state:
+        st.session_state.portfolios = {}
+    if 'portfolios_risk' not in st.session_state:
+        st.session_state.portfolios_risk = {}
+    if 'benchmarks' not in st.session_state:
+        st.session_state.benchmarks = {}
+    if 'benchmarks_risk' not in st.session_state:
+        st.session_state.benchmarks_risk = {}
 
-    # Streamlit page configuration
     st.title("Portfolio Backtesting App")
-    st.subheader("Data")
-    # Sidebar for file upload
-    st.sidebar.header("Upload Data")
+
+    # 2. Uploading Data and Initial Configuration
     uploaded_file = st.sidebar.file_uploader("Choose an Excel file (.xlsx)", type="xlsx")
-
     if uploaded_file is not None:
-        # Load and process data
         df_returns, df_weights = load_data(uploaded_file)
+        choice = st.radio("Configure as:", ("Portfolio", "Benchmark"))
 
-        # User input for weight option
-        weight_option = st.sidebar.selectbox("Select Weight Option:", ("Use Dataset Weights", "Custom Weights"))
-        strategic_weights = None
+        # User Inputs for Configuration
+        weight_option = st.selectbox("Select Weight Option:", ("Use Dataset Weights", "Custom Weights"))
+        start_date = st.date_input("Select Start Date:", value=df_returns.index.min())
+        name = st.text_input("Enter Name:")
 
+        # Custom Weights Configuration
         if weight_option == "Custom Weights":
-            st.sidebar.header("Specify Custom Weights")
-            custom_weights = {}
-            for asset in df_returns.columns:
-                custom_weights[asset] = st.sidebar.slider(f"Weight for {asset} (%)", min_value=0.0, max_value=100.0,
-                                                          value=0.0, step=1.0) / 100
-            strategic_weights = pd.DataFrame(custom_weights, index=[pd.to_datetime("today")])
+            custom_weights, rebalance_frequency = get_custom_weights_input(df_returns.columns)
 
-            # User input for rebalancing frequency
-            rebalance_frequency = st.sidebar.selectbox("Select Rebalancing Frequency:",
-                                                       ("Daily", "Weekly", "Monthly", "Quarterly", "Annually", "Buy and Hold"))
-        else:
-            strategic_weights = df_weights
-            rebalance_frequency = "N/A"  # Not applicable for dataset weights
+        confirm_button = st.button("Confirm and Calculate")
+        if confirm_button:
+            strategic_weights = df_weights if weight_option == "Use Dataset Weights" else pd.DataFrame(custom_weights,
+                                                                                                       index=[
+                                                                                                           start_date])
+            rebalanced_weights = generate_rebalanced_weights_for_frequency(strategic_weights, rebalance_frequency,
+                                                                           start_date, df_returns)
+            df_portfolio = calculate_detailed_portfolio(df_returns, rebalanced_weights, start_date, name)
+            df_risk = calculate_risk_metrics(df_portfolio, df_returns, start_date, window=30)
+            # 4. Store results in session state
+            if choice == "Portfolio":
+                st.session_state.returns = df_returns
+                st.session_state.portfolios[name] = df_portfolio
+                st.session_state.portfolios_risk[name] = df_risk
 
-        # User input for start date
-        start_date = st.sidebar.date_input("Select Start Date:", min_value=df_returns.index.min(),
-                                           max_value=df_returns.index.max(), value=df_returns.index.min())
+            else:
+                st.session_state.benchmarks[name] = df_portfolio
+                st.session_state.benchmarks_risk[name] = df_risk
 
-        # User input for portfolio name
-        portfolio_name = st.sidebar.text_input("Enter Portfolio Name:", "My Portfolio")
-
-        # Display data summaries
-        if weight_option == "Use Dataset Weights":
-            st.write("Weights Dataset")
-            st.write(df_weights.head())
-            start_date = df_weights.index.min()
-            df_portfolio = calculate_detailed_portfolio(df_returns, df_weights, start_date, portfolio_name = "Dataset Portfolio")
-
-        else:
-            st.write(f"Weights :arrow_right: Custom {rebalance_frequency:} Rebalancing Frequency")
-            rebalanced_weights = generate_rebalanced_weights_for_frequency(strategic_weights, rebalance_frequency, start_date, df_returns)
-            st.dataframe(rebalanced_weights)
-            df_portfolio = calculate_detailed_portfolio(df_returns, rebalanced_weights, start_date, portfolio_name="Portfolio")
-
-        st.write(f"Returns :arrow_right: {start_date:} to {max(df_returns.index):%Y-%m-%d}")
-        st.write(df_returns.loc[start_date:])
-        # Portfolio calculations
-        st.write(f"{portfolio_name:} :arrow_right: Horizon {min(df_portfolio.index):%Y-%m-%d} to {max(df_portfolio.index):%Y-%m-%d}")
-        st.dataframe(df_portfolio)
-
-        # Risk metrics
-        df_risk = calculate_risk_metrics(df_portfolio, df_returns, start_date, window=90)
-        # Creating plots
-        create_plots(df_returns, df_portfolio, df_risk, start_date)
-
+    # 5. Analysis and Comparison
+    if st.session_state.portfolios and st.session_state.benchmarks:
+        portfolio_selection = st.selectbox("Select Portfolio for Analysis:", list(st.session_state.portfolios.keys()))
+        benchmark_selection = st.selectbox("Select Benchmark for Comparison:", list(st.session_state.benchmarks.keys()))
+        analyze_button = st.button("Analyze")
+        if analyze_button:
+            # Assuming analysis functions are defined
+            perform_analysis(st.session_state.portfolios[portfolio_selection],
+                             st.session_state.benchmarks[benchmark_selection])
     else:
-        st.write("Please upload an Excel file to get started.")
+        st.write("Configure and confirm portfolios and benchmarks for analysis.")
 
 
-def create_plots(df_returns, df_portfolio, df_risk, start_date):
+def get_custom_weights_input(asset_columns):
+    custom_weights = {}
+    for asset in asset_columns:
+        custom_weights[asset] = st.sidebar.slider(f"Weight for {asset} (%)", min_value=0.0, max_value=100.0, value=0.0,
+                                                  step=1.0) / 100
+    rebalance_frequency = st.sidebar.selectbox("Select Rebalancing Frequency:",
+                                               ("Daily", "Weekly", "Monthly", "Quarterly", "Annually", "Buy and Hold"))
+    return custom_weights, rebalance_frequency
+
+
+def perform_analysis(portfolio_df, benchmark_df):
+    st.write(st.session_state.portfolios,
+             st.session_state.portfolios_risk,
+                             st.session_state.benchmarks,
+             st.session_state.benchmarks_risk)
+
+    if 'df_portfolio' in st.session_state['portfolios']:
+        df_portfolio = st.session_state['df_portfolio']
+
+        # Example operation on the DataFrame
+        st.write(df_portfolio.describe())
+
+    #create_plots(st.session_state.returns, st.session_state.portfolios, st.session_state.benchmarks,st.session_state.portfolios_risk)
+    pass
+
+
+def create_plots(df_returns, df_portfolio, df_benchmark, df_risk, start_date='31.12.2018'):
     # Plot 1: Cumulative Returns of Assets
     cum_returns = (1 + df_returns.loc[start_date:]).cumprod()
     fig1 = px.line(cum_returns, title='Cumulative Returns of Assets')
@@ -290,6 +309,14 @@ def create_plots(df_returns, df_portfolio, df_risk, start_date):
 
     # Plot 2: Portfolio Value Over Time
     fig2 = px.line(df_portfolio, x=df_portfolio.index, y='Portfolio Index', title='Portfolio Value Over Time')
+    # Check if df_benchmark is not None and add benchmark trace
+    if df_benchmark is not None:
+        # Convert Plotly Express figure to a Plotly Graph Objects Figure
+        fig2 = go.Figure(fig1)
+        # Add benchmark trace
+        fig2.add_trace(
+            go.Scatter(x=df_benchmark['Date'], y=df_benchmark.index, mode='lines', name='Benchmark'))
+
     st.plotly_chart(fig2)
 
     # Plot 3: Portfolio Standard Deviation Over Time
