@@ -281,22 +281,23 @@ def get_custom_weights_input(asset_columns):
     for asset in asset_columns:
         custom_weights[asset] = st.sidebar.slider(f"Weight for {asset} (%)", min_value=0.0, max_value=100.0, value=0.0,
                                                   step=1.0) / 100
-    rebalance_frequency = st.sidebar.selectbox("Select Rebalancing Frequency:",
+        rebalance_frequency = st.sidebar.selectbox("Select Rebalancing Frequency:",
                                                ("Daily", "Weekly", "Monthly", "Quarterly", "Annually", "Buy and Hold"))
     return custom_weights, rebalance_frequency
 
 
 def perform_analysis(portfolio_df, benchmark_df):
-    st.write(st.session_state.portfolios,
-             st.session_state.portfolios_risk,
-                             st.session_state.benchmarks,
-             st.session_state.benchmarks_risk)
+    for the_key in st.session_state.keys():
+        st.write(the_key)
+
+    for the_value in st.session_state.values():
+        st.write(the_value)
+
+    #st.write(st.session_state.portfolios, st.session_state.portfolios_risk, st.session_state.benchmarks, st.session_state.benchmarks_risk)
 
     if 'df_portfolio' in st.session_state['portfolios']:
         df_portfolio = st.session_state['df_portfolio']
 
-        # Example operation on the DataFrame
-        st.write(df_portfolio.describe())
 
     #create_plots(st.session_state.returns, st.session_state.portfolios, st.session_state.benchmarks,st.session_state.portfolios_risk)
     pass
