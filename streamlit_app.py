@@ -6,6 +6,7 @@ from scipy.stats import norm
 import streamlit as st
 import empyrical as ep
 
+# Version session state 0.1
 
 def load_data(uploaded_file):
     # Load the data from uploaded Excel file
