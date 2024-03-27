@@ -268,10 +268,14 @@ def main():
         portfolio_selection = st.selectbox("Select Portfolio for Analysis:", list(st.session_state.portfolios.keys()))
         benchmark_selection = st.selectbox("Select Benchmark for Comparison:", list(st.session_state.benchmarks.keys()))
         analyze_button = st.button("Analyze")
+        reset_button = st.button("Reset")
         if analyze_button:
             # Assuming analysis functions are defined
             perform_analysis(st.session_state.portfolios[portfolio_selection],
                              st.session_state.benchmarks[benchmark_selection])
+        elif reset_button:
+            for key in st.session_state.keys():
+                del st.session_state[key]
     else:
         st.write("Configure and confirm portfolios and benchmarks for analysis.")
 
