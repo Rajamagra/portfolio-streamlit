@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from scipy.stats import norm
 import streamlit as st
 import empyrical as ep
@@ -17,21 +18,17 @@ def load_data(uploaded_file):
 def generate_rebalanced_weights_for_frequency(strategic_weights, rebalance_frequency, start_date, returns_df):
     start_date = pd.to_datetime(start_date)
 
-    # Ensure strategic_weights is always a DataFrame for consistency
     if isinstance(strategic_weights, pd.Series):
         strategic_weights = strategic_weights.to_frame().T
-    elif isinstance(strategic_weights, np.ndarray):
-        # This part of the code should actually never be reached based on your setup,
-        # since strategic_weights should be either a Series or DataFrame, but just in case
-        # you directly passed an ndarray, handle it appropriately by converting to DataFrame.
-        # This requires knowing the column names in advance, which should match df_returns columns or be predefined.
-        column_names = strategic_weights.columns  # Assuming strategic weights align with returns columns
-        strategic_weights = pd.DataFrame(strategic_weights, columns=column_names)
 
-    # Find the closest start date in returns_df to the provided start_date
+    # Directly return the adjusted weights if using dataset weights
+    if rebalance_frequency is None:
+        return adjust_rebalancing_dates(strategic_weights, returns_df)
+
     closest_start_date = returns_df.index[min(range(len(returns_df.index)), key=lambda i: abs(returns_df.index[i] - start_date))]
 
-    # Generate rebalance dates starting from the closest_start_date
+    # Generate rebalance dates based on frequency
+    rebalance_dates = pd.DatetimeIndex([])
     if rebalance_frequency == 'Daily':
         rebalance_dates = returns_df.loc[closest_start_date:].index
     elif rebalance_frequency == 'Weekly':
@@ -45,14 +42,12 @@ def generate_rebalanced_weights_for_frequency(strategic_weights, rebalance_frequ
     elif rebalance_frequency == 'Buy and Hold':
         rebalance_dates = pd.DatetimeIndex([returns_df.index.min()])
 
-    # Initialize a DataFrame to hold rebalanced weights with correct column names from strategic_weights
     rebalanced_weights = pd.DataFrame(index=rebalance_dates, columns=strategic_weights.columns, dtype=float)
-
-    # Assign the strategic weights for each rebalance date
     for date in rebalance_dates:
-        rebalanced_weights.loc[date] = strategic_weights.iloc[0].values  # Using .values to ensure proper assignment
+        rebalanced_weights.loc[date] = strategic_weights.iloc[0].values
 
     return rebalanced_weights
+
 
 def adjust_rebalancing_dates(rebalancing_weights, df_returns):
     """
@@ -213,7 +208,6 @@ def calculate_risk_metrics(df_portfolio, df_returns, start_date, window=30):
 
     return df_risk
 
-
 def main():
     # 1. Initialize session state
     if 'returns' not in st.session_state:
@@ -227,7 +221,15 @@ def main():
     if 'benchmarks_risk' not in st.session_state:
         st.session_state.benchmarks_risk = {}
 
+    if 'portfolio_name' not in st.session_state:
+         st.session_state.portfolio_name = {}
+    if 'benchmark_name' not in st.session_state:
+         st.session_state.benchmark_name = {}
+
     st.title("Portfolio Backtesting App")
+
+    # Initialize rebalance_frequency with a default value or as None
+    rebalance_frequency = None
 
     # 2. Uploading Data and Initial Configuration
     uploaded_file = st.sidebar.file_uploader("Choose an Excel file (.xlsx)", type="xlsx")
@@ -257,11 +259,13 @@ def main():
             if choice == "Portfolio":
                 st.session_state.returns = df_returns
                 st.session_state.portfolios[name] = df_portfolio
-                st.session_state.portfolios_risk[name] = df_risk
+                st.session_state.portfolios_risk = df_risk
+                st.session_state.portfolio_name = name
 
             else:
                 st.session_state.benchmarks[name] = df_portfolio
-                st.session_state.benchmarks_risk[name] = df_risk
+                st.session_state.benchmarks_risk = df_risk
+                st.session_state.benchmark_name = name
 
     # 5. Analysis and Comparison
     if st.session_state.portfolios and st.session_state.benchmarks:
@@ -272,74 +276,169 @@ def main():
         if analyze_button:
             # Assuming analysis functions are defined
             perform_analysis(st.session_state.portfolios[portfolio_selection],
-                             st.session_state.benchmarks[benchmark_selection])
+                             st.session_state.benchmarks[benchmark_selection],
+                             st.session_state.returns,
+                             st.session_state.portfolios_risk,
+                             st.session_state.benchmarks_risk,
+                             st.session_state.portfolio_name,
+                             st.session_state.benchmark_name)
         elif reset_button:
             for key in st.session_state.keys():
                 del st.session_state[key]
     else:
         st.write("Configure and confirm portfolios and benchmarks for analysis.")
 
-
 def get_custom_weights_input(asset_columns):
     custom_weights = {}
-    for asset in asset_columns:
-        custom_weights[asset] = st.sidebar.slider(f"Weight for {asset} (%)", min_value=0.0, max_value=100.0, value=0.0,
-                                                  step=1.0) / 100
-        rebalance_frequency = st.sidebar.selectbox("Select Rebalancing Frequency:",
-                                               ("Daily", "Weekly", "Monthly", "Quarterly", "Annually", "Buy and Hold"))
+    for i, asset in enumerate(asset_columns):
+        # Use asset name as part of the key for slider to ensure uniqueness
+        custom_weights[asset] = st.sidebar.slider(
+            f"Weight for {asset} (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"weight_{asset}"
+        ) / 100
+
+    # Use a unique key for the selectbox
+    rebalance_frequency = st.selectbox(
+        "Select Rebalancing Frequency:",
+        ("Daily", "Weekly", "Monthly", "Quarterly", "Annually", "Buy and Hold"),
+        key="rebalance_frequency"
+    )
     return custom_weights, rebalance_frequency
 
 
-def perform_analysis(portfolio_df, benchmark_df):
-    for the_key in st.session_state.keys():
-        st.write(the_key)
+def perform_analysis(portfolio_df, benchmark_df, returns_df, portfolio_risk, benchmark_risk, portfolio_name, benchmark_name):
+    df_portfolio = pd.DataFrame(portfolio_df)
+    df_benchmark = pd.DataFrame(benchmark_df)
+    df_returns = pd.DataFrame(returns_df)
+    df_portfolio_risk = pd.DataFrame(portfolio_risk)
+    df_benchmark_risk = pd.DataFrame(benchmark_risk)
 
-    for the_value in st.session_state.values():
-        st.write(the_value)
+    create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_benchmark_risk)
 
-    #st.write(st.session_state.portfolios, st.session_state.portfolios_risk, st.session_state.benchmarks, st.session_state.benchmarks_risk)
-
-    if 'df_portfolio' in st.session_state['portfolios']:
-        df_portfolio = st.session_state['df_portfolio']
-
-
-    #create_plots(st.session_state.returns, st.session_state.portfolios, st.session_state.benchmarks,st.session_state.portfolios_risk)
     pass
 
 
-def create_plots(df_returns, df_portfolio, df_benchmark, df_risk, start_date='31.12.2018'):
+def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_benchmark_risk, start_date='31.12.2018'):
     # Plot 1: Cumulative Returns of Assets
     cum_returns = (1 + df_returns.loc[start_date:]).cumprod()
     fig1 = px.line(cum_returns, title='Cumulative Returns of Assets')
     st.plotly_chart(fig1)
 
     # Plot 2: Portfolio Value Over Time
-    fig2 = px.line(df_portfolio, x=df_portfolio.index, y='Portfolio Index', title='Portfolio Value Over Time')
-    # Check if df_benchmark is not None and add benchmark trace
+    fig2 = go.Figure()
+    # Add Portfolio trace
+    fig2.add_trace(go.Scatter(x=df_portfolio.index, y=df_portfolio['Portfolio Index'],
+                              mode='lines', name='Portfolio',
+                              line=dict(color='blue')))
+    # Check if df_benchmark is not None and add Benchmark trace
     if df_benchmark is not None:
-        # Convert Plotly Express figure to a Plotly Graph Objects Figure
-        fig2 = go.Figure(fig1)
-        # Add benchmark trace
-        fig2.add_trace(
-            go.Scatter(x=df_benchmark['Date'], y=df_benchmark.index, mode='lines', name='Benchmark'))
+        fig2.add_trace(go.Scatter(x=df_benchmark.index, y=df_benchmark['Portfolio Index'],
+                                  mode='lines', name='Benchmark'))
 
+    # Set titles and labels
+    fig2.update_layout(title='Portfolio Value Over Time',
+                       xaxis_title='Date',
+                       yaxis_title='Index Value',
+                       legend_title_text='Legend')
     st.plotly_chart(fig2)
 
     # Plot 3: Portfolio Standard Deviation Over Time
-    fig3 = px.line(df_risk, x=df_risk.index, y='Portfolio Std Dev', title='Portfolio Standard Deviation')
-    fig3.update_layout(xaxis_title='Date', yaxis_tickformat='.2%', yaxis_title='Standard Deviation')
+    fig3 = go.Figure()
+    # Add Portfolio trace
+    fig3.add_trace(go.Scatter(x=df_portfolio_risk.index, y=df_portfolio_risk['Portfolio Std Dev'],
+                              mode='lines', name='Portfolio'))
+    # Check if df_benchmark is not None and add Benchmark trace
+    if df_benchmark is not None:
+        fig3.add_trace(go.Scatter(x=df_benchmark_risk.index, y=df_benchmark_risk['Portfolio Std Dev'],
+                                  mode='lines', name='Benchmark'))
+
+    # Set titles and labels
+    fig3.update_layout(title='Rolling Volatility Over Time',
+                       xaxis_title='Date',
+                       yaxis_title='Volatility in Percent',
+                       yaxis_tickformat='.2%',
+                       legend_title_text='Legend')
+    # Show the plot in Streamlit
     st.plotly_chart(fig3)
 
     # Plot 4: Daily portfolio returns as a bar chart
-    fig4 = px.bar(df_portfolio, x=df_portfolio.index, y='Portfolio Return', title='Daily Portfolio Returns')
-    fig4.update_layout(xaxis_title='Date', yaxis_tickformat='.2%', yaxis_title='Daily Return')
+    fig4 = go.Figure()
+    # Add Portfolio trace
+    fig4.add_trace(go.Bar(x=df_portfolio.index, y=df_portfolio['Portfolio Return'],
+                          name='Portfolio'))
+
+    # Check if df_benchmark is not None and add Benchmark bar trace
+    if df_benchmark is not None:
+        fig4.add_trace(go.Bar(x=df_benchmark.index, y=df_benchmark['Portfolio Return'],
+                              name='Benchmark'))
+
+    # Set titles and labels
+    fig4.update_layout(title='Daily Returns',
+                       xaxis_title='Date',
+                       yaxis_title='Returns in Percent',
+                       yaxis_tickformat='.2%',
+                       barmode='group',  # Group bars for comparison if benchmark data is included
+                       legend_title_text='Legend')
+
+    # Show the plot in Streamlit
     st.plotly_chart(fig4)
+
+
+    # Plot 4: Daily portfolio returns as a bar chart
+    fig4a = go.Figure()
+    # Add Portfolio trace
+    fig4a.add_trace(go.Scatter(y=df_portfolio['Portfolio Return'], x=df_benchmark['Portfolio Return'],
+                               showlegend=False,
+                               mode='markers', marker=dict(
+            color=df_portfolio['Portfolio Return'],  # set color equal to a variable
+            colorscale="rdylgn",  # one of plotly colorscales,
+            colorbar=dict(
+                title='Portfolio Return %',
+                tickformat='.2%'),  # Format tick labels as percentages
+            showscale = True)))
+
+    # Calculate the coefficients of the linear regression
+    slope, intercept = np.polyfit(df_benchmark['Portfolio Return'], df_portfolio['Portfolio Return'], 1)
+    # Generate the x-values for the regression line (from min to max of benchmark returns)
+    x_reg_line = np.linspace(df_benchmark['Portfolio Return'].min(), df_benchmark['Portfolio Return'].max(), 100)
+    # Calculate the y-values for the regression line
+    y_reg_line = slope * x_reg_line + intercept
+
+    # Display the regression equation as an annotation
+    regression_equation = f'Trendline: Rᵖ= {intercept:.2f} + {slope:.2f}×Rᴮ'
+    fig4a.add_annotation(xref='paper', yref='paper', x=0.05, y=0.95,
+                         text=regression_equation,
+                         showarrow=False, font=dict(size=14))
+
+    # Add regression line trace
+    fig4a.add_trace(go.Scatter(x=x_reg_line, y=y_reg_line, mode='lines', name='Regression Line',
+                               showlegend=False,
+                               line=dict(width=2)))
+
+    # Set titles and labels
+    fig4a.update_layout(title='Regression',
+                       xaxis_title='Benchmark Returns',
+                       yaxis_title='Portfolio Returns',
+                       yaxis_tickformat='.2%', xaxis_tickformat='.2%',
+                       legend_title_text='Legend')
+
+    # Show the plot in Streamlit
+    st.plotly_chart(fig4a)
+
 
     # Plot 5: Monthly Heatmap of Returns
     monthly_ret_table = ep.aggregate_returns(df_portfolio['Portfolio Return'].fillna(0.0), 'monthly')
     monthly_ret_table = monthly_ret_table.unstack().round(4) * 100
-    fig5 = px.imshow(monthly_ret_table, text_auto=True, aspect="auto", color_continuous_scale="rdylgn")
+    fig5 = px.imshow(monthly_ret_table, text_auto=True, aspect="auto", color_continuous_scale="rdylgn",
+                     title="Portfolio Monthly Heatmap")
     st.plotly_chart(fig5)
+
+    # Plot 5: Monthly Heatmap of Returns
+    if df_benchmark is not None:
+        monthly_ret_table_bm = ep.aggregate_returns(df_benchmark['Portfolio Return'].fillna(0.0), 'monthly')
+        monthly_ret_table_bm = monthly_ret_table_bm.unstack().round(4) * 100
+        fig5a = px.imshow(monthly_ret_table_bm, text_auto=True, aspect="auto", color_continuous_scale="rdylgn",
+                          title="Benchmark Monthly Heatmap")
+        st.plotly_chart(fig5a)
 
     # Plot 6: Weights as a stacked area chart
     # Identify weight columns that have non-zero values in any row
@@ -353,8 +452,8 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_risk, start_date='31
 
     # Filter the columns to get only the PCS data
     # Filter columns where all values are np.nan or zero
-    PCR_cols = [col for col in df_risk.columns if col.startswith('PCR_')]
-    df_pcs = df_risk[PCR_cols].copy()
+    PCR_cols = [col for col in df_portfolio_risk.columns if col.startswith('PCR_')]
+    df_pcs = df_portfolio_risk[PCR_cols].copy()
     df_pcs = df_pcs[1:]
     df_pcs.fillna(0, inplace=True)
     non_zero_pcs_cols = [col for col in df_pcs.columns if
@@ -370,8 +469,8 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_risk, start_date='31
     st.plotly_chart(fig7)
 
     # Filter the columns to get only the CTR data
-    CTR_cols = [col for col in df_risk.columns if col.startswith('CTR_')]
-    df_ctr = df_risk[CTR_cols].copy()
+    CTR_cols = [col for col in df_portfolio_risk.columns if col.startswith('CTR_')]
+    df_ctr = df_portfolio_risk[CTR_cols].copy()
     df_ctr.fillna(0, inplace=True)
     non_zero_ctr_cols = [col for col in df_ctr.columns if
                             col.startswith('CTR_') and not (df_ctr[col] == 0).all()]
