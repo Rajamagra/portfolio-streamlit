@@ -6,3 +6,4 @@ plotly.express
 scipy
 empyrical
 cvxpy
+sklearn.covariance
