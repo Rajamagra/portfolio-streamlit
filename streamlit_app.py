@@ -233,6 +233,7 @@ def display_custom_weights_figure(custom_weights):
     st.plotly_chart(fig)
 
 
+
 def main():
     st.set_page_config(layout="wide")
 
