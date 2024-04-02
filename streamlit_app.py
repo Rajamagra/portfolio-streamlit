@@ -7,7 +7,6 @@ import numpy as np
 import statsmodels.api as sm
 import scipy.stats as stats
 import empyrical as ep
-import cvxpy
 import plotly.express as px
 import plotly.graph_objects as go
 
