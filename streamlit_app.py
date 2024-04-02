@@ -397,6 +397,99 @@ def perform_analysis(portfolio_df, benchmark_df, returns_df, portfolio_risk, ben
     pass
 
 
+def rolling_portfolio_optimization(df_returns, window, solvers=['OSQP', 'ECOS']):
+    """
+    Perform rolling window optimization to find the MVP and generate the Efficient Frontier.
+    :param df_returns: DataFrame containing asset returns.
+    :param window: Integer representing the rolling window size in terms of days.
+    :return: df_MVP and df_EF dataframes.
+    """
+    # Initialize lists and dataframes to store results
+    mvp_performance_list = []
+    mvp_weights_list = []
+    msp_weights_list = []  # List to store Max Sharpe Portfolio weights
+    df_EF = pd.DataFrame()
+
+    # Loop through the rolling window
+    for end_date in range(window, len(df_returns)):
+        # Define the current window
+        start_date = end_date - window
+        current_window = df_returns.iloc[start_date:end_date]
+        print("Step:" + str(start_date))
+
+        # Calculate expected returns and sample covariance
+        mu = expected_returns.mean_historical_return(current_window, returns_data=True,
+                                                     compounding=True, frequency=12, log_returns=False)
+        S = risk_models.CovarianceShrinkage(current_window, returns_data=True, frequency=12,
+                                            log_returns=False).ledoit_wolf().astype(float)
+        # Optimize for minimum volatility
+        ef = EfficientFrontier(mu, S)
+        ef.add_constraint(lambda w: w >= 0)
+        weights_min_vol = ef.min_volatility()
+        perf_min_vol = ef.portfolio_performance(verbose=False)
+
+        # Optimize for maximum Sharpe ratio (MSP)
+        ef_msp = EfficientFrontier(mu, S)
+        ef_msp.add_constraint(lambda w: w >= 0)
+        weights_msp = ef_msp.max_sharpe()
+        perf_msp = ef_msp.portfolio_performance(verbose=False)
+
+        # Append weights to lists with the date for identification
+        date_str = df_returns.index[end_date].strftime('%Y-%m-%d')
+        weights_min_vol_with_date = {'Date': date_str, **weights_min_vol}
+        weights_msp_with_date = {'Date': date_str, **weights_msp}
+
+        mvp_weights_list.append(weights_min_vol_with_date)
+        msp_weights_list.append(weights_msp_with_date)
+
+        mvp_performance_list.append({
+            'Date': date_str,
+            'Return': perf_min_vol[0],
+            'Volatility': perf_min_vol[1],
+            'Sharpe Ratio': perf_min_vol[2]
+        })
+
+        # for target_return in np.linspace(mu.min(), mu.max(), 20):
+        for target_return in np.linspace(perf_min_vol[0] + 0.00001, mu.max() - 0.00001, 200):
+            for solver in solvers:
+                try:
+                    ef = EfficientFrontier(mu, S, weight_bounds=(0, 1), solver=solver)
+                    ef.add_constraint(lambda w: w >= 0)
+                    ef.add_constraint(lambda w: sum(w) == 1)
+                    ef.efficient_return(target_return=target_return, market_neutral=False)
+                    perf = ef.portfolio_performance(verbose=False)
+
+                    temp_df_EF = pd.DataFrame({
+                        'Date': [df_returns.index[end_date - 1]],
+                        'Return': [perf[0]],
+                        'Volatility': [perf[1]],
+                        'Sharpe Ratio': perf_min_vol[2]
+                    })
+                    df_EF = pd.concat([df_EF, temp_df_EF], ignore_index=True)
+                    break  # Break out of the solver loop if optimization is successful
+
+                except cvxpy.error.SolverError:
+                    print(f"Solver {solver} failed at target return {target_return}. Trying next solver.")
+                    continue  # Try the next solver in the list
+
+                except Exception as e:
+                    print(f"Unexpected error with solver {solver}: {e}. Skipping this target return.")
+                    break  # Move to the next target return if an unexpected error occurs
+
+    # Convert lists to DataFrames
+    df_MVP_W = pd.DataFrame(mvp_weights_list)
+    df_MVP_W.set_index('Date', inplace=True)
+
+    df_MSP_W = pd.DataFrame(msp_weights_list)  # Convert MSP weights list to DataFrame
+    df_MSP_W.set_index('Date', inplace=True)
+
+    df_MVP = pd.DataFrame(mvp_performance_list)
+    df_MVP['Date'] = pd.to_datetime(df_MVP['Date'])
+    df_MVP.set_index('Date', inplace=True)
+
+    return df_MVP_W, df_MVP, df_MSP_W, df_EF
+
+
 def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_benchmark_risk, portfolio_name,
                  benchmark_name, start_date='31.12.2018'):
 
