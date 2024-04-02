@@ -1,5 +1,5 @@
 #####################################################################################################
-#from statsmodels.regression.rolling import RollingOLS
+#Libraries: Check Requirements.txt
 #####################################################################################################
 import streamlit as st
 import pandas as pd
@@ -9,7 +9,8 @@ import scipy.stats as stats
 import empyrical as ep
 import plotly.express as px
 import plotly.graph_objects as go
-import statsmodels.regression.rolling
+from statsmodels.regression.rolling import RollingOLS
+
 
 def load_data(uploaded_file):
     # Load the data from uploaded Excel file
