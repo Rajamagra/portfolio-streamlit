@@ -1,18 +1,7 @@
-import streamlit as st
-import numpy as np
-import pandas as pd
-import plotly.express as px
-from scipy.stats import norm
-import streamlit as st
-import empyrical as ep
-import cvxpy
-
-from scipy.optimize import minimize
-import plotly.graph_objects as go
-from sklearn.covariance import LedoitWolf
+#####################################################################################################
 from pypfopt import EfficientFrontier, expected_returns, risk_models
 from statsmodels.regression.rolling import RollingOLS
-import statsmodels.api as sm
+#####################################################################################################
 
 
 @st.cache_data
@@ -182,7 +171,7 @@ def calculate_risk_metrics(df_portfolio, df_returns, start_date, window=30):
         df_risk.loc[date, 'Portfolio Std Dev'] = portfolio_std_dev
 
         # Calculate Value at Risk (VaR) for the portfolio - assuming a normal distribution, 95% confidence level
-        var_95 = -norm.ppf(0.05) * portfolio_std_dev
+        var_95 = -stats.norm.ppf(0.05) * portfolio_std_dev
         df_risk.loc[date, 'VaR 95%'] = var_95
 
     for date in df_returns_subset.index:
@@ -219,6 +208,7 @@ def calculate_risk_metrics(df_portfolio, df_returns, start_date, window=30):
 
     return df_risk
 
+
 def display_custom_weights_figure(custom_weights):
     total_weight = sum(custom_weights.values())
     weights_df = pd.DataFrame({
@@ -231,13 +221,13 @@ def display_custom_weights_figure(custom_weights):
                   annotation_position="bottom right")
     st.plotly_chart(fig)
 
+
 def main():
     st.set_page_config(layout="wide")
 
     # 1. Initialize session state
     if 'analyzed' not in st.session_state:
         st.session_state.analyzed = False  # Flag to track if analysis has been performed
-
     if 'returns' not in st.session_state:
         st.session_state.returns = {}
     if 'portfolios' not in st.session_state:
@@ -331,7 +321,7 @@ def main():
             # Dummy df_risk for PUBLICA
             df_risk = pd.DataFrame({
                 'Portfolio Std Dev': df_publica['Portfolio Return'].rolling(window=30).std() * np.sqrt(252),
-                'VaR 95%': -norm.ppf(0.05) * df_publica['Portfolio Return'].rolling(window=30).std() * np.sqrt(252)},
+                'VaR 95%': -stats.norm.ppf(0.05) * df_publica['Portfolio Return'].rolling(window=30).std() * np.sqrt(252)},
                 index=df_publica.index)
 
             st.session_state.benchmarks_risk = df_risk
@@ -368,6 +358,7 @@ def main():
     else:
         st.write("Configure and confirm portfolios and benchmarks for analysis.")
 
+
 def get_custom_weights_input(asset_columns):
     custom_weights = {}
     for i, asset in enumerate(asset_columns):
@@ -384,9 +375,9 @@ def get_custom_weights_input(asset_columns):
     )
     return custom_weights, rebalance_frequency
 
+
 def perform_analysis(portfolio_df, benchmark_df, returns_df, portfolio_risk, benchmark_risk, portfolio_name,
                      benchmark_name):
-
     df_portfolio = pd.DataFrame(portfolio_df)
     df_benchmark = pd.DataFrame(benchmark_df)
     df_returns = pd.DataFrame(returns_df)
@@ -394,6 +385,7 @@ def perform_analysis(portfolio_df, benchmark_df, returns_df, portfolio_risk, ben
     df_benchmark_risk = pd.DataFrame(benchmark_risk)
     create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_benchmark_risk, portfolio_name, benchmark_name)
     pass
+
 
 def rolling_portfolio_optimization(df_returns, window, solvers=['OSQP', 'ECOS']):
     """
@@ -406,8 +398,6 @@ def rolling_portfolio_optimization(df_returns, window, solvers=['OSQP', 'ECOS'])
     mvp_performance_list = []
     mvp_weights_list = []
     msp_weights_list = []  # List to store Max Sharpe Portfolio weights
-    df_MVP = pd.DataFrame()
-    df_MSP_w = pd.DataFrame()  # DataFrame to store Max Sharpe Portfolio weights
     df_EF = pd.DataFrame()
 
     # Loop through the rolling window
@@ -487,9 +477,8 @@ def rolling_portfolio_optimization(df_returns, window, solvers=['OSQP', 'ECOS'])
     df_MVP['Date'] = pd.to_datetime(df_MVP['Date'])
     df_MVP.set_index('Date', inplace=True)
 
-    # df_EF logic remains unchanged
-
     return df_MVP_W, df_MVP, df_MSP_W, df_EF
+
 
 def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_benchmark_risk, portfolio_name,
                  benchmark_name, start_date='31.12.2018'):
@@ -519,7 +508,6 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
         return value_at_risk
 
     def perf_stats(returns, factor_returns=None):
-        import scipy.stats as stats
         # Portfolio Statistics:
         SIMPLE_STAT_FUNCS = [
             ep.annual_return,
@@ -564,15 +552,15 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
             'Daily turnover'
         ]
 
-        stats = pd.Series()
+        statistics = pd.Series()
         for stat_func in SIMPLE_STAT_FUNCS:
-            stats[STAT_FUNC_NAMES[stat_func.__name__]] = stat_func(returns)
+            statistics[STAT_FUNC_NAMES[stat_func.__name__]] = stat_func(returns)
 
         if factor_returns is not None:
             for stat_func in FACTOR_STAT_FUNCS:
                 res = stat_func(returns, factor_returns)
-                stats[STAT_FUNC_NAMES[stat_func.__name__]] = res
-        return stats
+                statistics[STAT_FUNC_NAMES[stat_func.__name__]] = res
+        return statistics
 
     stats_portfolio = perf_stats(df_portfolio['Portfolio Return'], factor_returns=df_benchmark['Portfolio Return'])
     stats_benchmark = perf_stats(df_benchmark['Portfolio Return'], factor_returns = None)
@@ -727,7 +715,7 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
         xaxis_tickformat='.2%')
 
     # Calculate Value at Risk (VaR) for the portfolio - assuming a normal distribution, 95% confidence level
-    var_95_Port = norm.ppf(0.05) * df_portfolio['Portfolio Return'].std()
+    var_95_Port = -stats.norm.ppf(0.05) * df_portfolio['Portfolio Return'].std()
     fig10.add_trace(go.Scatter(x=[var_95_Port, var_95_Port], y=[0, 250],
                                mode='lines', name='Value at Risk 95%',
                                line=dict(width=1, color='red', dash='dash')))
@@ -821,7 +809,6 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
 
     fig12 = calculate_and_plot_rolling_beta(df_portfolio['Portfolio Return'], df_benchmark['Portfolio Return'])
     c2.plotly_chart(fig12, use_container_width=True)
-
 
     # FIG 13 - Max Drawdown Portfolio
     def gen_drawdown_table(returns, top=3):
@@ -1237,6 +1224,7 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
                        yaxis_tickformat='.2%',
                        title="Maximum Sharpe Portfolio Weights")
     st.plotly_chart(fig20, use_container_width=True)
+
 
 if __name__ == '__main__':
     main()
