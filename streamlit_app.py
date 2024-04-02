@@ -13,6 +13,7 @@ from statsmodels.regression.rolling import RollingOLS
 from pypfopt import risk_models
 from pypfopt import expected_returns
 from pypfopt.efficient_frontier import EfficientFrontier
+import cvxpy
 
 
 def load_data(uploaded_file):
@@ -725,7 +726,7 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
         xaxis_tickformat='.2%')
 
     # Calculate Value at Risk (VaR) for the portfolio - assuming a normal distribution, 95% confidence level
-    var_95_Port = -stats.norm.ppf(0.05) * df_portfolio['Portfolio Return'].std()
+    var_95_Port = stats.norm.ppf(0.05) * df_portfolio['Portfolio Return'].std()
     fig10.add_trace(go.Scatter(x=[var_95_Port, var_95_Port], y=[0, 250],
                                mode='lines', name='Value at Risk 95%',
                                line=dict(width=1, color='red', dash='dash')))
