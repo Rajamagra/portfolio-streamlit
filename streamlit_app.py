@@ -9,6 +9,7 @@ import scipy.stats as stats
 import empyrical as ep
 import plotly.express as px
 import plotly.graph_objects as go
+import statsmodels.regression.rolling
 
 def load_data(uploaded_file):
     # Load the data from uploaded Excel file
