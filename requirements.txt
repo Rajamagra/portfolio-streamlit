@@ -2,10 +2,9 @@ streamlit
 pandas
 numpy
 statsmodels
-scipy.stats
+scipy
 empyrical
-plotly.express
-plotly.graph_objects
+plotly
 pypfopt
 cvxpy
 seaborn
