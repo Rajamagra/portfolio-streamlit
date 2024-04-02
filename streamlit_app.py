@@ -13,7 +13,7 @@ from statsmodels.regression.rolling import RollingOLS
 from pypfopt import risk_models
 from pypfopt import expected_returns
 from pypfopt.efficient_frontier import EfficientFrontier
-import cvxpy
+#import cvxpy
 
 
 def load_data(uploaded_file):
