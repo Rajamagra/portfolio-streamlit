@@ -8,3 +8,4 @@ empyrical
 plotly
 pyportfolioopt
 scikit-learn
+cvxpy
