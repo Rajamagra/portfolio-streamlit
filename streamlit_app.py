@@ -10,6 +10,7 @@ import empyrical as ep
 import plotly.express as px
 import plotly.graph_objects as go
 from statsmodels.regression.rolling import RollingOLS
+from pypfopt import EfficientFrontier, expected_returns, risk_models
 
 
 def load_data(uploaded_file):
@@ -1019,6 +1020,222 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
         fig.frames = frames
 
         return fig
+
+
+    # FIG 17 - Correlation Heatmap for Portfolio
+    from plotly.subplots import make_subplots
+
+    def create_rolling_correlation_heatmap(df_returns, window):
+        # Calculate rolling correlation matrices
+        rolling_corr = df_returns.rolling(window=window).corr(pairwise=True)
+
+        # Extract unique dates for animation frames
+        dates = rolling_corr.index.get_level_values(0).unique()
+
+        # Initialize figure with subplots
+        fig = make_subplots(rows=1, cols=1, subplot_titles=('Rolling Correlation Heatmap',))
+
+        # Create frames for animation
+        frames = []
+
+        for date in dates:
+            # Extract correlation matrix for the current date
+            corr_matrix = rolling_corr.loc[date].values
+
+            # Skip the date if correlation matrix is all NaN (insufficient data)
+            if np.isnan(corr_matrix).all():
+                continue
+
+            # Make the matrix asymmetric by omitting the first asset from columns
+            corr_matrix_asymmetric = corr_matrix[:, 1:]
+            asset_labels = df_returns.columns[1:]
+
+            # Create heatmap for the current date
+            heatmap = go.Heatmap(
+                z=corr_matrix_asymmetric,
+                x=asset_labels,
+                y=df_returns.columns,  # Keep all assets in rows
+                colorscale='RdYlGn_r',  # Inverted Red to Green color scale
+                zmin=-1,  # Minimum correlation value
+                zmax=1,  # Maximum correlation value
+                text=np.around(corr_matrix_asymmetric, 2),  # Round correlations to two digits and convert to text
+                texttemplate="%{text}",
+                hoverinfo="text"  # Show text on hover
+            )
+
+            frame_name = date.strftime('%Y-%m-%d')  # Format date
+            frames.append(go.Frame(data=[heatmap], name=frame_name,
+                                   layout=go.Layout(title_text='Rolling Correlation Heatmap: ' + frame_name)))
+
+        # Set the initial state with the first frame's data
+        fig.add_trace(frames[0].data[0])
+        fig.update_layout(title_text='Rolling Correlation Heatmap: ' + frames[0].name)
+
+        # Add Play/Pause button and slider to the layout
+        fig.update_layout(
+            updatemenus=[{
+                "type": "buttons",
+                "showactive": False,
+                "buttons": [{
+                    "label": "Play",
+                    "method": "animate",
+                    "args": [None,
+                             {"frame": {"duration": 500, "redraw": True}, "fromcurrent": True, "mode": "immediate"}]
+                }, {
+                    "label": "Pause",
+                    "method": "animate",
+                    "args": [[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}]
+                }],
+                "direction": "left",
+                "pad": {"r": 10, "t": 87},
+                "x": 1.0,
+                "xanchor": "right",
+                "y": 1.15,  # Position slightly above the top right corner
+                "yanchor": "top"
+            }],
+            sliders=[{
+                "steps": [{
+                    "method": 'animate',
+                    "args": [[frame.name], {"frame": {"duration": 500, "redraw": True}, "mode": "immediate"}],
+                    "label": frame.name
+                } for frame in frames],
+                "currentvalue": {"prefix": "Date: "},
+                "x": 0.1,
+                "len": 0.9,
+                "xanchor": "left",
+                "y": -.1,  # Keep the slider positioning
+            }],
+            xaxis_title='Assets',
+            yaxis_title='Assets',
+            coloraxis_colorbar=dict(title='Correlation'),
+        )
+
+        # Add frames to the figure
+        fig.frames = frames
+
+        return fig
+
+    fig17 = create_rolling_correlation_heatmap(df_returns, window=30)
+    st.plotly_chart(fig17, use_container_width=True)
+
+    # FIG 18: Weights as a stacked area chart
+    # Identify weight columns that have non-zero values in any row
+    non_zero_weight_cols = [col for col in df_portfolio.columns if
+                            col.startswith('EOD_W_') and not (df_portfolio[col] == 0).all()]
+    # Plot 5: Weights as a stacked area chart using filtered columns
+    fig18 = px.area(df_portfolio, x=df_portfolio.index, y=non_zero_weight_cols, title='Asset Weights Over Time')
+    fig18.update_layout(xaxis_title='Date', yaxis_tickformat='.2%', yaxis_title='Weights in Percent',
+                       legend_title='Assets')
+    st.plotly_chart(fig18, use_container_width=True)
+
+    # FIG 19: Efficient Frontier
+    # Convert daily returns to cumulative returns
+    cumulative_returns = (1 + df_returns).cumprod()
+    # Resample to get end-of-month values and then calculate monthly returns from these
+    monthly_cumulative_returns = cumulative_returns.resample('M').last()
+    monthly_returns = monthly_cumulative_returns.pct_change().dropna()
+
+    # Calculate expected returns and sample covariance
+    mu = expected_returns.mean_historical_return(monthly_returns, returns_data=True,
+                                                 compounding=True, frequency=12, log_returns=False)
+    S = risk_models.CovarianceShrinkage(monthly_returns, returns_data=True, frequency=12,
+                                        log_returns=False).ledoit_wolf().astype(float)
+
+    # Minimum Variance Portfolio
+    ef = EfficientFrontier(mu, S)  # Re-initialize to reset the weights
+    weights_min_var = ef.min_volatility()
+    perf_min_var = ef.portfolio_performance(verbose=True)
+    del ef
+    # Maximum Sharpe Ratio (Tangency Portfolio)
+    ef = EfficientFrontier(mu, S)  # Re-initialize to reset the weights
+    weights_max_sharpe = ef.max_sharpe()
+    perf_max_sharpe = ef.portfolio_performance(verbose=True)
+
+    # Maximum Return Portfolio: Identifying the asset with the maximum return
+    max_return_asset = mu.idxmax()
+    # Calculate the standard deviation (volatility) of the maximum return asset
+    volatility_max_return = np.sqrt(S.loc[max_return_asset, max_return_asset])
+    # Set the weights to be 100% in the max return asset
+    weights_max_return = {asset: 0.0 for asset in mu.index}
+    weights_max_return[max_return_asset] = 1.0
+    # Performance metrics for the maximum return portfolio
+    perf_max_return = (
+        mu[max_return_asset], volatility_max_return, 'N/A')  # Return, Volatility, Sharpe (N/A without risk-free rate)
+
+    # Calculate efficient frontier again
+    returns_range = np.linspace(perf_min_var[0] + 0.0001, perf_max_return[0] - 0.0001, 20)
+    volatility_range = []
+
+    for r in returns_range:
+        ef = EfficientFrontier(mu, S)
+        ef.add_constraint(lambda w: w >= 0)
+        ef.add_constraint(lambda w: sum(w) == 1)
+        ef.efficient_return(target_return=r, market_neutral=False)
+        volatility_range.append(ef.portfolio_performance()[1])
+
+    fig = go.Figure()
+    # Efficient Frontier
+    fig.add_trace(go.Scatter(x=volatility_range, y=returns_range, mode='lines', name='Efficient Frontier'))
+
+    # Add Special Portfolios
+    fig.add_trace(go.Scatter(x=[(perf_min_var[1])], y=[perf_min_var[0]],
+                             mode='markers', marker_symbol='x', name='Min Variance'))
+    fig.add_trace(go.Scatter(x=[(perf_max_sharpe[1])], y=[perf_max_sharpe[0]],
+                             mode='markers', marker_symbol='x', name='Tangency'))
+    fig.add_trace(go.Scatter(x=[perf_max_return[1]], y=[perf_max_return[0]],
+                             mode='markers', marker_symbol='x', name='Max Return'))
+
+    # Assets
+    for asset in mu.index:
+        fig.add_trace(go.Scatter(x=[np.sqrt(S.loc[asset, asset])], y=[mu[asset]],
+                                 mode='markers', name=asset))
+
+    fig.update_layout(xaxis_title="Volatility (Std. Deviation)",
+                      xaxis_tickformat='.2%',
+                      yaxis_title="Expected Return",
+                      yaxis_tickformat='.2%',
+                      title="Efficient Frontier with Special Portfolios")
+    fig.update_traces(marker_size=12)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Portfolio Optimization over Horizon
+    with st.spinner('Calculating Efficient Frontiers...'):
+        st.write("Rolling Portfolio Optimization")
+        # Convert daily returns to cumulative returns
+        cumulative_returns = (1 + df_returns).cumprod()
+        monthly_cumulative_returns = cumulative_returns.resample('M').last()
+        monthly_cumulative_returns = monthly_cumulative_returns.pct_change().dropna()
+        df_MVP_W, df_MVP, df_MSP_W, df_EF = rolling_portfolio_optimization(monthly_cumulative_returns, 24)
+    st.success('Done!')
+
+    # Efficient Frontier
+    df_EF_reset = df_EF.reset_index(inplace=False)
+    fig8 = px.scatter(df_EF_reset, x=df_EF_reset.Volatility, y=df_EF_reset.Return, animation_frame=df_EF_reset.Date,
+                      color=df_EF_reset.Date,
+                      hover_name=df_EF_reset.Date, range_x=[0, df_EF_reset.Volatility.max()],
+                      range_y=[0, df_EF_reset.Return.max()])
+    fig8.update_layout(xaxis_title='Volatility', xaxis_tickformat='.2%', yaxis_tickformat='.2%', yaxis_title='Return',
+                       template='seaborn')
+
+    st.plotly_chart(fig8, use_container_width=True)
+
+    fig9 = px.bar(df_MVP_W, x=df_MVP_W.index, y=df_MVP_W.columns)
+    fig9.update_layout(xaxis_title="Weights of Assets (Minimum Volatility Portfolio)",
+                       yaxis_title="Allocation in Percent",
+                       yaxis_tickformat='.2%',
+                       title="Minimum Volatility Portfolio Weights")
+    st.plotly_chart(fig9, use_container_width=True)
+
+    # FIG 20: Maximum Sharpe Portfolio Allocation
+    fig20 = px.bar(df_MSP_W, x=df_MSP_W.index, y=df_MSP_W.columns)
+    fig20.update_layout(xaxis_title="Strategy Weights (Maximum Sharpe Portfolio)",
+                       yaxis_title="Allocation in Percent",
+                       yaxis_tickformat='.2%',
+                       title="Maximum Sharpe Portfolio Weights")
+    st.plotly_chart(fig20, use_container_width=True)
+
+
+        
 
 
 if __name__ == '__main__':
