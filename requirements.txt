@@ -7,3 +7,4 @@ scipy
 empyrical
 plotly
 pyportfolioopt
+scikit-learn
