@@ -5,7 +5,5 @@ statsmodels
 scipy
 empyrical
 plotly
-pypfopt
-cvxpy
 seaborn
 openpyxl
