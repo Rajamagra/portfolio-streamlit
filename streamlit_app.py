@@ -2,8 +2,6 @@
 #from statsmodels.regression.rolling import RollingOLS
 #####################################################################################################
 
-
-@st.cache_data
 def load_data(uploaded_file):
     # Load the data from uploaded Excel file
     df_returns = pd.read_excel(uploaded_file, sheet_name='Returns', index_col=0, parse_dates=True)
