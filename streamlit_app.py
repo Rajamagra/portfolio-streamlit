@@ -10,7 +10,9 @@ import empyrical as ep
 import plotly.express as px
 import plotly.graph_objects as go
 from statsmodels.regression.rolling import RollingOLS
-from pypfopt import EfficientFrontier, expected_returns, risk_models
+from pypfopt import risk_models
+from pypfopt import expected_returns
+from pypfopt.efficient_frontier import EfficientFrontier
 
 
 def load_data(uploaded_file):
