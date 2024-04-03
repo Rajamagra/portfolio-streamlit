@@ -1281,6 +1281,16 @@ def create_plots(df_returns, df_portfolio, df_benchmark, df_portfolio_risk, df_b
                              mode='markers', marker_symbol='x', name='Tangency'))
     fig.add_trace(go.Scatter(x=[perf_max_return[1]], y=[perf_max_return[0]],
                              mode='markers', marker_symbol='x', name='Max Return'))
+    
+    r_p =  [stats_portfolio[1] / 10]
+    s_p =  [stats_portfolio[3] / 10]
+    fig.add_trace(go.Scatter(x=s_p, y=r_p,
+                             mode='markers', marker_symbol='square', name=portfolio_name))
+
+    r_b =  [stats_benchmark[1] / 10]
+    s_b =  [stats_benchmark[3] / 10]
+    fig.add_trace(go.Scatter(x=s_b, y=r_b,
+                             mode='markers', marker_symbol='square', name=benchmark_name))
 
     # Assets
     for asset in mu.index:
